@@ -18,5 +18,4 @@
 ## Pixel location
 You can change the grid coordinate configuration in: **pwm-32-control/microrobot CTRL 32/pixel_art.py**.
 
-<img width="2813" height="1220" alt="Group 76" src="https://github.com/user-attachments/assets/8c616978-dda8-4f87-a809-ac120f57b8f1" />
-<img width="686" height="505" alt="Screenshot 2025-09-24 at 5 15 02 PM" src="https://github.com/user-attachments/assets/7876c8ab-ef35-45a5-a495-d5222f732116" />
+<img width="2837" height="3356" alt="Group 77" src="https://github.com/user-attachments/assets/73606554-1212-45aa-bda0-186402bc1b96" />
