@@ -6,13 +6,10 @@
 
 ## Devices
 
-### Microcontroller: Raspberry PI pico
-
-### Computer: Raspberry PI 4
-
-### I2C PWM Driver: PCA9685
-
-### H Bridge Motor Driver: DRV8871
+Microcontroller: Raspberry PI pico
+Computer: Raspberry PI 4
+I2C PWM Driver: PCA9685
+H Bridge Motor Driver: DRV8871
 
 
 ## Pixel location
