@@ -4,17 +4,38 @@ import time
 import serial
 from collections import deque
 
+# ================== Config ==================
 # Manhattan distance transform
-# --- Config ---
-SCREEN_W, SCREEN_H = 800, 800
-FPS = 60
-
-# Grid size (fixed)
-N_ROWS, N_COLS = 4, 8
+SERIAL_PORTS = ['/dev/cu.usbmodem1020BA0ABA902']
 
 # Polarity control: direction = 1 -> negative (red), -1 -> positive (green)
 direction = -1
 
+# ------------------ Pattern (1-based -> convert to 0-based) ------------------
+ONE_BASED_CELLS = [
+    (1,3), (1,5),
+    (2,3), (2,4), (2,5), (2,6),
+    (3,2), (3,4), (3,6),
+    (4,2), (4,7)
+]
+HERD_PULSE_DT = 1     # seconds: time between band pulses
+# ================== Config ==================
+
+
+
+
+
+
+
+
+
+
+
+CELLS = [(r-1, c-1) for (r, c) in ONE_BASED_CELLS]
+SCREEN_W, SCREEN_H = 800, 800
+FPS = 30
+# Grid size (fixed)
+N_ROWS, N_COLS = 4, 8
 # Colors
 BG_COLOR = (30, 30, 30)
 GRID_COLOR = (80, 80, 80)
@@ -25,20 +46,9 @@ BUTTON_BG_HOVER = (90, 90, 90)
 TEXT_COLOR = (240, 240, 240)
 
 # Serial (optional). If port not found, code still runs.
-SERIAL_PORTS = ['/dev/cu.usbmodemF412FA64B66C2']
 SERIAL_BAUD = 115200
 
-# ------------------ Pattern (1-based -> convert to 0-based) ------------------
-ONE_BASED_CELLS = [
-    (1,3), (1,5),
-    (2,3), (2,4), (2,5), (2,6),
-    (3,2), (3,4), (3,6),
-    (4,2), (4,7)
-]
-CELLS = [(r-1, c-1) for (r, c) in ONE_BASED_CELLS]
-
 # --- Herding params & state ---
-HERD_PULSE_DT = 1     # seconds: time between band pulses
 HERD_OVERLAP = True      # overlap k and k-1 bands briefly
 HERD_OVERLAP_HOLD = 10 # seconds to hold overlap
 FINAL_HOLD = 15        # keep final M on (effectively indefinite)

@@ -1,11 +1,11 @@
-import pygame, numpy as np, time, serial
+import pygame
+import numpy as np
+import time
+import serial
 
 # ================== Config ==================
-SCREEN_W, SCREEN_H = 800, 800
-FPS = 60
-
-# Grid
-N_ROWS, N_COLS = 4, 8
+# Serial (optional)
+SERIAL_PORTS=['/dev/cu.usbmodem1020BA0ABA902']
 
 # Polarity channels (fixed mapping)
 CH_NEG = 0   # e.g., green
@@ -15,12 +15,27 @@ CH_POS = 1   # e.g., red
 FULL_NEG = 100.0   # amplitude for -1 (CH_NEG)
 FULL_POS = 100.0   # amplitude for +1 (CH_POS)
 
-DUR_NEG  = 0.5     # seconds for -1
-DUR_POS  = 0.5     # seconds for +1
-DUR_OFF  = 0.5     # seconds for 0 (OFF)
+DUR_NEG  = 1     # seconds for -1
+DUR_POS  = 2     # seconds for +1
+DUR_OFF  = 0.01     # seconds for 0 (OFF)
+# ================== Config ==================
 
+
+
+
+
+
+
+
+
+
+SCREEN_W, SCREEN_H = 800, 800
+FPS = 30
+# Grid
+N_ROWS, N_COLS = 4, 8
 SEND_ON_SWITCH = True  # send immediately when switching states
 SEND_EVERY    = 1      # periodic resend interval; None disables
+SERIAL_BAUD=115200
 
 # Choose the sequence: list of (polarity, duration)
 # polarity: -1 = NEG channel, +1 = POS channel, 0 = OFF
@@ -36,9 +51,7 @@ BG_COLOR=(30,30,30); GRID_COLOR=(80,80,80)
 POS_COLOR=(0,255,0); NEG_COLOR=(255,0,0)
 TEXT_COLOR=(240,240,240)
 
-# Serial (optional)
-SERIAL_PORTS=['/dev/cu.usbmodemF412FA64B66C2']
-SERIAL_BAUD=115200
+
 
 # ================== Helpers ==================
 def create_grid(n,m): return np.zeros((n,m,3), dtype=float)

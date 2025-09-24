@@ -1,4 +1,4 @@
-# 32 SIMPLE CONTROL: 4×8 Electromagnet/Motor Array Controller
+# 4×8 Electromagnet Array Controller
 
 Pixel-level control for a 4×8 electromagnet array.  
 This code sets per-coil **magnitude (0–100%)** and **direction (+/−)** in real time.

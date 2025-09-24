@@ -7,16 +7,28 @@ import numpy as np
 import serial
 import time
 
-# === Serial ===
+# ================== Config ==================
 SERIAL_PORT = '/dev/cu.usbmodem1020BA0ABA902'
-SERIAL_BAUD = 115200
+DECAY_DURATION = 0.1        # decaying time: how long do you want to turn magnet on?
+maxIntensity = 10           # maximum intensity of each magnet [0,10]
+# ================== Config ==================
+
+
+
+
+
+
+
+
+
+
+
+
 
 # === Pygame / UI ===
-SCREEN_W, SCREEN_H = 800, 800
-FPS = 100
-DECAY_DURATION = 0.1        # decaying time: how long do you want to turn magnet on?
-maxIntensity = 10           # maximum intensity of each magnet
-
+SERIAL_BAUD = 115200
+SCREEN_W, SCREEN_H = 800, 550
+FPS = 30
 BG_COLOR   = (30, 30, 30)
 GRID_COLOR = (80, 80, 80)
 POS_COLOR  = (255, 0, 0)  # positive (shown when grid[i,j,0] > 0)
@@ -183,7 +195,7 @@ while running:
     # build & show CSV (for 4x8 always valid)
     A = get_output_matrix(grid_data)
     csv_output_str = matrix_to_csv_string(A)
-    draw_csv_string(csv_output_str, x0, pos_y + n*28 + 10, grid_w, label="CSV output =")
+    # draw_csv_string(csv_output_str, x0, pos_y + n*28 + 10, grid_w, label="CSV output =")
 
     # send @10Hz
     if ser and (now - last_sent) >= 0.1:
@@ -199,10 +211,9 @@ while running:
             except Exception:
                 pass
 
-    if csv_input_str:
-        draw_text(screen, "CSV input =", (x0, pos_y + n*28 + 10 + 220), center=False, size=22, color=(150,220,255))
-        draw_text(screen, csv_input_str[:120], (x0 + 120, pos_y + n*28 + 10 + 220), center=False, size=18, color=(200,220,255))
-
+    #if csv_input_str:
+        #draw_text(screen, "CSV input =", (x0, pos_y + n*28 + 10 + 220), center=False, size=22, color=(150,220,255))
+        #draw_text(screen, csv_input_str[:120], (x0 + 120, pos_y + n*28 + 10 + 220), center=False, size=18, color=(200,220,255))
     pygame.display.flip()
     clock.tick(FPS)
 
