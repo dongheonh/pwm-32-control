@@ -6,14 +6,10 @@
 
 ## Devices
 
-### microcontroller: 
-#### Raspberry PI pico
+### microcontroller: Raspberry PI pico
 
-### Computer: 
-#### Raspberry PI 4
+### Computer: Raspberry PI 4
 
-### I2C PWM Driver
-#### PCA9685
+### I2C PWM Driver: PCA9685
 
-### H Bridge Motor Driver 
-#### DRV8871
+### H Bridge Motor Driver: DRV8871
