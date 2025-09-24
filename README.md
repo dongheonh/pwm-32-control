@@ -6,7 +6,7 @@
 
 ## Devices
 
-### microcontroller: Raspberry PI pico
+### Microcontroller: Raspberry PI pico
 
 ### Computer: Raspberry PI 4
 
