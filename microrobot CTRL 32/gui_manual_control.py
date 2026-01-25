@@ -21,10 +21,6 @@ maxIntensity = 10           # maximum intensity of each magnet [0,10]
 
 
 
-
-
-
-
 # === Pygame / UI ===
 SERIAL_BAUD = 115200
 SCREEN_W, SCREEN_H = 800, 550

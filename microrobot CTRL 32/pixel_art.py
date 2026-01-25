@@ -7,10 +7,7 @@ import serial
 SERIAL_PORTS = ['/dev/cu.usbmodem1020BA0ABA902']
 # ------------------ Pattern (1-based -> convert to 0-based) ------------------
 ONE_BASED_CELLS = [
-    (1,3), (1,5), (1,2), (1,8),
-    (2,3), (2,4), (2,5), (2,6),
-    (3,2), (3,4), (3,6),
-    (4,2), (4,7)
+    (2,2), (2,3), (3,2) (3,3)
 ]
 # ================== Config ==================
 
@@ -30,7 +27,7 @@ FPS = 30
 N_ROWS, N_COLS = 4, 8
 
 # Polarity control: direction = 1 -> negative (red), -1 -> positive (green)
-direction = 1
+direction = -1
 
 # Colors
 BG_COLOR = (30, 30, 30)

@@ -1,8 +1,13 @@
 # SAM LAB, D H HAN
-# 4x8 electromagnet herding GUI (target = location cells, pull-in from 주변 -> target)
+# 4x8 electromagnet herding GUI (target = location cells)
+#
+# Goal:
+# - Attraction: keep TARGET cells ON with one polarity.
+# - Repulsion squeeze: every time-frame, activate ~TARGET (or outside band) with the OPPOSITE polarity
+#   to push/squeeze particles toward the target region.
 #
 # Usage:
-# - Click "Start" (or press SPACE): activates Manhattan-distance bands from outside -> inside -> target.
+# - Click "Start" (or press SPACE): run herding bands (outside -> inside) + repulsion squeeze.
 # - Click "Stop" (or ESC): sends all zeros and exits.
 #
 # Coordinate convention:
@@ -17,24 +22,36 @@ from collections import deque
 # ================== Config ==================
 SERIAL_PORTS = ['/dev/cu.usbmodem1020BA0ABA902']
 
-# Polarity control:
-# direction =  1 -> NEG channel (red)
-# direction = -1 -> POS channel (green)
-direction = 1  # attraction
+# Polarity convention (matches your UI labeling):
+# direction =  1 -> NEG channel is the "attract" polarity (red)
+# direction = -1 -> POS channel is the "attract" polarity (green)
+direction = 1
 
-# ------------------ Target location (1-based) ------------------
+# ------------------ Target location (1-based, (1,1)=LEFT-BOTTOM) ------------------
 ONE_BASED_CELLS = [
-    (2, 4), (3, 4)
+    (2, 4), (2, 5), (3, 4), (3, 5)
 ]
 
-# Herding timing
-HERD_PULSE_DT = 6        # seconds: time between band steps (outside -> inside)
-HERD_OVERLAP = True         # keep ring k and k-1 briefly together
-HERD_OVERLAP_HOLD = HERD_PULSE_DT/2    # seconds: overlap duration
+# Herding timing (k: Dmax -> 0)
+HERD_PULSE_DT = 5.0            # seconds: time between band steps (outside -> inside)
+HERD_OVERLAP = True            # keep ring k and k-1 briefly together (visual smoothing)
+HERD_OVERLAP_HOLD = 2.0        # seconds: overlap duration
 
-FINAL_HOLD = True           # keep final target ON continuously after herding
-SERIAL_SEND_DT = 0.10       # seconds: serial update interval (10 Hz)
-PWM_MAX = 10.0              # UI/command magnitude (0..10)
+FINAL_HOLD = True              # keep final target ON continuously after herding
+
+# Serial
+SERIAL_BAUD = 115200
+SERIAL_SEND_DT = 0.10          # seconds: serial update interval (~10 Hz)
+
+# Command amplitudes (0..10)
+PWM_MAX = 10.0                 # maximum value sent per channel
+ATTRACT_AMP = 10.0             # target strength
+REPEL_AMP = 10               # squeeze strength (start lower than ATTRACT_AMP)
+
+# Repulsion squeeze mode:
+# - "complement": repel_mask = ~target (strong, global squeeze)
+# - "outside_band": repel_mask = (D >= k+1) & ~target (push from outside toward current band)
+REPEL_MODE = "outside_band"
 # ================== Config ==================
 
 # Convert (1-based, left-bottom origin) -> internal (0-based, top-left origin)
@@ -52,9 +69,6 @@ NEG_COLOR = (255, 0, 0)   # NEG channel visualization (red)
 BUTTON_BG = (60, 60, 60)
 BUTTON_BG_HOVER = (90, 90, 90)
 TEXT_COLOR = (240, 240, 240)
-
-# Serial
-SERIAL_BAUD = 115200
 
 # ---------------------------------------------
 # Helpers
@@ -145,7 +159,7 @@ def clear_all_pwm(grid, ser):
     A = get_output_matrix(grid)
     send_matrix_over_serial(A, ser)
 
-# --- Distance map & band activation (targets = location cells) ---
+# --- Distance map & masks ---
 def build_target_mask(n, m, cells):
     mask = np.zeros((n, m), dtype=bool)
     for (i, j) in cells:
@@ -172,26 +186,40 @@ def manhattan_distance_to_targets(n, m, target_mask):
     D[np.isinf(D)] = 0
     return D.astype(int)
 
-def apply_sel(grid, sel_mask, direction, amp=PWM_MAX):
-    grid[:, :, :2] = 0.0
+def clamp_amp(x):
+    return float(max(0.0, min(float(PWM_MAX), float(x))))
+
+def apply_attract_and_repel(grid, target_mask, repel_mask, direction, attract_amp, repel_amp):
+    """
+    direction =  1: NEG(red) is attract channel, POS(green) is repel channel
+    direction = -1: POS(green) is attract channel, NEG(red) is repel channel
+
+    We set BOTH masks every frame (squeeze).
+    """
+    a = clamp_amp(attract_amp)
+    r = clamp_amp(repel_amp)
+
+    grid[:, :, :2] = 0.0  # reset every frame
+
     if direction == -1:
-        # POS channel
-        grid[sel_mask, 0] = float(amp)
+        # attract = POS (green)
+        grid[target_mask, 0] = a
+        # repel = NEG (red)
+        grid[repel_mask, 1] = r
     else:
-        # NEG channel
-        grid[sel_mask, 1] = float(amp)
+        # attract = NEG (red)
+        grid[target_mask, 1] = a
+        # repel = POS (green)
+        grid[repel_mask, 0] = r
 
-def activate_band(grid, D, k, direction):
-    sel = (D == k)
-    apply_sel(grid, sel, direction, amp=PWM_MAX)
-
-def activate_band_with_overlap(grid, D, k, direction):
-    sel = (D == k)
-    inner = (D == (k - 1)) if k > 0 else np.zeros_like(sel, dtype=bool)
-    apply_sel(grid, sel | inner, direction, amp=PWM_MAX)
-
-def activate_targets_only(grid, target_mask, direction):
-    apply_sel(grid, target_mask, direction, amp=PWM_MAX)
+def band_masks(D, k, overlap):
+    """
+    Return the "active band" mask (ring) for visualization / herding schedule.
+    If overlap=True, include k and k-1.
+    """
+    if overlap and k > 0:
+        return (D == k) | (D == (k - 1))
+    return (D == k)
 
 # ---------------------------------------------
 # Main
@@ -255,32 +283,57 @@ def main():
                     clear_all_pwm(grid, ser)
                     running = False
 
-        # ----- Herding logic (pull 주변 -> target) -----
+        # ----- Herding logic + squeeze (repulsion) -----
         if started:
             if state == "herd":
                 if (now - band_last_t) >= HERD_PULSE_DT:
                     band_last_t = now
-
                     if HERD_OVERLAP:
-                        activate_band_with_overlap(grid, D, band_k, direction)
                         overlap_until = now + HERD_OVERLAP_HOLD
-                    else:
-                        activate_band(grid, D, band_k, direction)
 
+                    # Step inward
                     band_k -= 1
                     if band_k < 0:
                         state = "hold" if FINAL_HOLD else "idle"
-                        if FINAL_HOLD:
-                            activate_targets_only(grid, target_mask, direction)
+
+                # choose k for this frame (handle overlap smoothing)
+                if HERD_OVERLAP and now < overlap_until:
+                    k_use = max(band_k + 1, 0)  # just-activated
+                    band_mask = band_masks(D, k_use, overlap=True)
                 else:
-                    # Maintain overlap briefly for smoother pulling
-                    if HERD_OVERLAP and now < overlap_until:
-                        kk = band_k + 1  # last-activated k
-                        if kk >= 0:
-                            activate_band_with_overlap(grid, D, kk, direction)
+                    k_use = max(band_k, 0)
+                    band_mask = band_masks(D, k_use, overlap=False)
+
+                # Build repel_mask
+                if REPEL_MODE == "complement":
+                    repel_mask = (~target_mask)
+                else:
+                    # "outside_band": repel everything outside the current band toward target (exclude target)
+                    # push from far to near: D >= k_use+1
+                    repel_mask = (D >= (k_use + 1)) & (~target_mask)
+
+                # Apply BOTH: target attraction + opposite-polarity repulsion squeeze
+                apply_attract_and_repel(
+                    grid,
+                    target_mask=target_mask,
+                    repel_mask=repel_mask,
+                    direction=direction,
+                    attract_amp=ATTRACT_AMP,
+                    repel_amp=REPEL_AMP
+                )
 
             elif state == "hold":
-                activate_targets_only(grid, target_mask, direction)
+                # Keep squeezing in hold if desired:
+                # Here: complement squeeze (strong). If you want only target hold, set repel_mask to all False.
+                repel_mask = (~target_mask) if REPEL_MODE == "complement" else ((D >= 1) & (~target_mask))
+                apply_attract_and_repel(
+                    grid,
+                    target_mask=target_mask,
+                    repel_mask=repel_mask,
+                    direction=direction,
+                    attract_amp=ATTRACT_AMP,
+                    repel_amp=REPEL_AMP
+                )
 
             # Serial output at fixed rate
             if (now - last_send_t) >= SERIAL_SEND_DT:
@@ -290,11 +343,14 @@ def main():
 
         # ----- Draw -----
         screen.fill(BG_COLOR)
-        draw_text(screen, f"direction={direction}  (1: NEG/red, -1: POS/green)", (20, 10), size=24)
-        draw_text(screen, f"target ONE_BASED_CELLS={ONE_BASED_CELLS}  | state={state}  | k={band_k}", (20, 38), size=22, color=(200, 220, 200))
-
-        # show D map (optional): comment out if not needed
-        # draw_text(screen, f"Dmax={Dmax}", (20, 62), size=18, color=(180, 180, 180))
+        draw_text(screen, f"direction={direction}  (1: attract=NEG/red, -1: attract=POS/green)", (20, 10), size=22)
+        draw_text(
+            screen,
+            f"target={ONE_BASED_CELLS} | state={state} | REPEL_MODE={REPEL_MODE} | ATTRACT={ATTRACT_AMP} REPEL={REPEL_AMP} | k={band_k}",
+            (20, 38),
+            size=18,
+            color=(200, 220, 200)
+        )
 
         draw_grid(screen, grid)
 
@@ -302,7 +358,7 @@ def main():
         for rect, label in [(start_rect, "Start (SPACE)"), (stop_rect, "Stop (ESC)")]:
             hover = rect.collidepoint(pygame.mouse.get_pos())
             pygame.draw.rect(screen, BUTTON_BG_HOVER if hover else BUTTON_BG, rect, border_radius=10)
-            draw_text(screen, label, rect.center, size=28, center=True)
+            draw_text(screen, label, rect.center, size=26, center=True)
 
         pygame.display.flip()
         clock.tick(FPS)

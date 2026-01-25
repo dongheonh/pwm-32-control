@@ -11,7 +11,7 @@ FPS = 60
 N_ROWS, N_COLS = 4, 8
 
 # Polarity control: direction = 1 -> red(channel 1), -1 -> green(channel 0)
-direction = 1
+direction = -1
 
 # ---- Ramp params ----
 MAX_INTENSITY   = 100.0   # 하드웨어 상한에 맞춰 조정
