@@ -24,6 +24,10 @@ Adafruit_PWMServoDriver pwm4(0x78);
 void setup() {
   Serial.begin(115200);  // Start serial communication
 
+  Wire.begin();                 // I2C init. 
+  Wire.setClock(400000);        // config: 400 kHz 
+
+
   // Initialize all PWM drivers
   pwm1.begin();
   pwm2.begin();
