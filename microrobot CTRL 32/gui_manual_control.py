@@ -1,6 +1,11 @@
 # SAM LAB, D H HAN
 # 09/23/2025
 # Fixed 4x8 electromagnet GUI -> simple, no setup UI
+#
+# Update (2026-01-24):
+# - Add a "100% hold" period of 5 seconds after each click.
+# - After the hold, linearly decay to 0 over the remaining time.
+# - Remove hard-coded "10" in decay; use maxIntensity.
 
 import pygame
 import numpy as np
@@ -9,17 +14,10 @@ import time
 
 # ================== Config ==================
 SERIAL_PORT = '/dev/cu.usbmodem1020BA0ABA902'
-DECAY_DURATION = 0.1        # decaying time: how long do you want to turn magnet on?
-maxIntensity = 10           # maximum intensity of each magnet [0,10]
+DECAY_DURATION = 10        # total ON window (seconds): hold + decay
+HOLD_DURATION  = 5         # 100% (maxIntensity) hold time (seconds)
+maxIntensity   = 10        # maximum intensity of each magnet [0,10]
 # ================== Config ==================
-
-
-
-
-
-
-
-
 
 # === Pygame / UI ===
 SERIAL_BAUD = 115200
@@ -37,7 +35,7 @@ TABLE_GRID = (70, 70, 70)
 n, m = 4, 8  # rows=4, cols=8 (fixed)
 
 def create_grid(n, m):
-    # channels: [pos_val (0..10), neg_val (0..10), t_start]
+    # channels: [pos_val (0..maxIntensity), neg_val (0..maxIntensity), t_start]
     return np.zeros((n, m, 3), dtype=float)
 
 grid_data = create_grid(n, m)
@@ -56,7 +54,6 @@ def draw_text(surface, text, pos, center=False, size=28, color=TEXT_COLOR):
         rect.topleft = pos
     surface.blit(img, rect)
 
-
 def get_dynamic_tile_size(n, m):
     tile_size = min((SCREEN_W - 20)//m, (SCREEN_H - 180)//n)
     return max(4, tile_size)
@@ -74,12 +71,12 @@ def draw_grid(grid):
             y = y0 + i*tile
             pos_val, neg_val, _ = grid[i, j]
             if pos_val > 0:
-                alpha = int(np.clip(25.5 * pos_val, 25, 255))
+                alpha = int(np.clip(25.5 * (pos_val / maxIntensity) * 10.0, 25, 255))
                 surf = pygame.Surface((tile-2, tile-2), pygame.SRCALPHA)
                 surf.fill((*POS_COLOR, alpha))
                 screen.blit(surf, (x, y))
             elif neg_val > 0:
-                alpha = int(np.clip(25.5 * neg_val, 25, 255))
+                alpha = int(np.clip(25.5 * (neg_val / maxIntensity) * 10.0, 25, 255))
                 surf = pygame.Surface((tile-2, tile-2), pygame.SRCALPHA)
                 surf.fill((*NEG_COLOR, alpha))
                 screen.blit(surf, (x, y))
@@ -88,21 +85,57 @@ def draw_grid(grid):
     return x0, y0 + grid_h, grid_w, tile, y0
 
 def update_decay(grid):
+    """
+    Behavior:
+      - For HOLD_DURATION seconds after click: keep intensity at maxIntensity (100%).
+      - Then linearly decay to 0 by DECAY_DURATION.
+      - After DECAY_DURATION: OFF (zero).
+    """
     now = time.time()
+
+    # Safety: ensure sensible parameters
+    hold = max(0.0, float(HOLD_DURATION))
+    total = max(0.0, float(DECAY_DURATION))
+    decay_window = max(0.0, total - hold)
+
     for i in range(n):
         for j in range(m):
             pos_val, neg_val, t0 = grid[i, j]
-            if t0 > 0:
-                elapsed = now - t0
-                if elapsed < DECAY_DURATION:
-                    k = 1.0 - (elapsed / DECAY_DURATION)
-                    if pos_val > 0: grid[i, j][0] = 10 * k
-                    if neg_val > 0: grid[i, j][1] = 10 * k
+            if t0 <= 0:
+                continue
+
+            elapsed = now - t0
+
+            if elapsed < hold:
+                # 100% hold: keep whatever polarity was set at maxIntensity
+                if pos_val > 0:
+                    grid[i, j][0] = float(maxIntensity)
+                    grid[i, j][1] = 0.0
+                elif neg_val > 0:
+                    grid[i, j][1] = float(maxIntensity)
+                    grid[i, j][0] = 0.0
                 else:
                     grid[i, j][:] = 0.0
+                continue
+
+            if elapsed < total and decay_window > 0:
+                # linear decay from maxIntensity to 0 over decay_window
+                tau = elapsed - hold
+                k = 1.0 - (tau / decay_window)  # k in (0,1]
+                k = float(np.clip(k, 0.0, 1.0))
+                if pos_val > 0:
+                    grid[i, j][0] = float(maxIntensity) * k
+                    grid[i, j][1] = 0.0
+                elif neg_val > 0:
+                    grid[i, j][1] = float(maxIntensity) * k
+                    grid[i, j][0] = 0.0
+                else:
+                    grid[i, j][:] = 0.0
+            else:
+                # after total window: OFF
+                grid[i, j][:] = 0.0
 
 def draw_table(grid, pos_x, pos_y, width):
-    # limited pretty print up to 16x32; here it’s 4x8 so fine.
     table_top = pos_y + 10
     cell_h = 28
     cell_w = max(width // max(m, 1), 28)
@@ -136,16 +169,6 @@ def get_output_matrix(grid):
 def matrix_to_csv_string(A):
     return ",".join(str(int(v)) for v in A.flatten())
 
-def draw_csv_string(csv_str, pos_x, pos_y, width, label="CSV output ="):
-    start_y = pos_y + 40
-    max_chars = max(width // 12, 40)
-    lines = [csv_str[i:i+max_chars] for i in range(0, len(csv_str), max_chars)]
-    draw_text(screen, label, (pos_x, start_y), center=False, size=22, color=(255,220,150))
-    for k, line in enumerate(lines[:8]):
-        draw_text(screen, line, (pos_x + 40, start_y + 25 + k*22), center=False, size=18, color=(220,255,220))
-    if len(lines) > 8:
-        draw_text(screen, "...", (pos_x + 40, start_y + 25 + 8*22), center=False, size=18, color=(220,255,220))
-
 def send_matrix_over_serial(A, ser):
     data_str = matrix_to_csv_string(A) + "\n"
     try:
@@ -171,18 +194,18 @@ while running:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
+
         elif event.type == pygame.MOUSEBUTTONDOWN:
-            # map mouse to cell and set impulse (L: neg=10, R: pos=10) strength: [0,100]
-            # you can tunne maximum from the top
+            # map mouse to cell and set impulse
             x0, pos_y, grid_w, tile, y0 = draw_grid(grid_data)  # get geometry
             mx, my = pygame.mouse.get_pos()
             j = (mx - x0) // tile
             i = (my - y0) // tile
             if 0 <= i < n and 0 <= j < m:
                 if event.button == 1:   # left click => negative
-                    grid_data[i, j] = [0, maxIntensity, time.time()]
+                    grid_data[i, j] = [0.0, float(maxIntensity), time.time()]
                 elif event.button == 3: # right click => positive
-                    grid_data[i, j] = [maxIntensity, 0, time.time()]
+                    grid_data[i, j] = [float(maxIntensity), 0.0, time.time()]
 
     update_decay(grid_data)
     x0, pos_y, grid_w, _, _ = draw_grid(grid_data)
@@ -191,7 +214,6 @@ while running:
     # build & show CSV (for 4x8 always valid)
     A = get_output_matrix(grid_data)
     csv_output_str = matrix_to_csv_string(A)
-    # draw_csv_string(csv_output_str, x0, pos_y + n*28 + 10, grid_w, label="CSV output =")
 
     # send @10Hz
     if ser and (now - last_sent) >= 0.1:
@@ -207,9 +229,6 @@ while running:
             except Exception:
                 pass
 
-    #if csv_input_str:
-        #draw_text(screen, "CSV input =", (x0, pos_y + n*28 + 10 + 220), center=False, size=22, color=(150,220,255))
-        #draw_text(screen, csv_input_str[:120], (x0 + 120, pos_y + n*28 + 10 + 220), center=False, size=18, color=(200,220,255))
     pygame.display.flip()
     clock.tick(FPS)
 

@@ -1,27 +1,43 @@
 # SAM LAB, D H HAN
 # 4x8 electromagnet GUI (NO DECAY)
-# - location: vibrating region (square wave in time)
+# - region1/region2: vibrating regions (square wave in time)
 # - trap: always-ON magnets (independent of vibration)
+#
+# Change requested:
+# - Allow intensity_range to be given as either:
+#     (neg_level, pos_level)  e.g. (-1, 1)  => start with NEG when polarity="alt"
+#   or
+#     (pos_level, neg_level)  e.g. (1, -1)  => start with POS when polarity="alt"
+# - Interpretation rule for polarity="alt":
+#     k = floor(now / period)
+#     if k even  -> "start polarity" sign (set by intensity_range ordering)
+#     if k odd   -> opposite sign
 #
 # ===================== CONFIG (EDIT ONLY THESE) =====================
 # Coordinates: (row,col), 1-indexed, (1,1)=LEFT-BOTTOM
 
-# --- vibrating region ---
-location = [(1,1), (2,1), (1,2), (2,2)]
-intensity_range = (-1, 0.2)   # (NEG level, POS level), each in [-1,1] ||| (-1,0) neg (-1,1) alt
-polarity = "alt"                # "pos", "neg", "alt" (alternate every period)
-period = 0.1                    # [sec] square-wave period T
-dutycycle = 0.5                 # [0,1] ON fraction of the period (TIME duty)
+# --- vibrating region 1 ---
+location = [(1, 1), (1,3), (2,2), (2,4), (3,1), (3,3), (4,2), (4,4)]
+intensity_range = (-1, 1)     # can be (-, +) OR (+, -) to set start sign
+polarity = "alt"              # "pos", "neg", "alt"
+period = 1/2                    # [sec]
+dutycycle = 1                 # [0,1]
+
+# --- vibrating region 2 ---
+location2 = [(1, 2), (1,4), (2,1), (2,3), (3,2), (3,4), (4,1), (4,3)]
+intensity_range2 = (1, -1)    # start with +1 when polarity="alt"
+polarity2 = "alt"
+period2 = 1/2
+dutycycle2 = 1
 
 # --- trap magnets (always ON) ---
-# trap_location = [(3,1), (3,2), (1,3), (2,3), (3,3)]         # always-on cells
-trap_location = [(4,1), (4,2), (4,3), (4,4), (3,4), (2,4), (1,4)]         # always-on cells
-trap_intensity = 0.8           # [-1,1] sign=polarity, magnitude=intensity
+trap_location =  [(5,1), (5,3), (6,2), (6,4), (7,1), (7,3), (8,2), (8,4), (5,2), (5,4), (6,1), (6,3), (7,2), (7,4), (8,1), (8,3)] 
+trap_intensity = 0.8         # [-1,1]
 
 SERIAL_PORT = '/dev/cu.usbmodem1020BA0ABA902'
 SERIAL_BAUD = 115200
 SEND_HZ = 10
-PWM_MAX = 10                    # hardware scaling (0..10)
+PWM_MAX = 10                  # hardware scaling (0..PWM_MAX)
 # ====================================================================
 
 import pygame
@@ -44,13 +60,14 @@ TABLE_GRID = (70, 70, 70)
 n, m = 4, 8
 
 def create_grid(n, m):
+    # grid[i,j] = [pos_pwm, neg_pwm, reserved]
     return np.zeros((n, m, 3), dtype=float)
 
 grid_data = create_grid(n, m)
 
 pygame.init()
 screen = pygame.display.set_mode((SCREEN_W, SCREEN_H))
-pygame.display.set_caption("4x8 magnet GUI (location + trap + square vibration)")
+pygame.display.set_caption("4x8 magnet GUI (2 regions + trap + square vibration)")
 clock = pygame.time.Clock()
 
 def clamp(x, lo, hi):
@@ -72,28 +89,29 @@ def get_dynamic_tile_size(n, m):
 
 def draw_grid(grid):
     tile = get_dynamic_tile_size(n, m)
-    grid_w, grid_h = m*tile, n*tile
-    x0 = (SCREEN_W - grid_w)//2
+    grid_w, grid_h = m * tile, n * tile
+    x0 = (SCREEN_W - grid_w) // 2
     y0 = 20
     screen.fill(BG_COLOR)
 
     for i in range(n):
         for j in range(m):
-            x = x0 + j*tile
-            y = y0 + i*tile
+            x = x0 + j * tile
+            y = y0 + i * tile
             pos_val, neg_val, _ = grid[i, j]
+
             if pos_val > 0:
                 alpha = int(np.clip(255.0 * (pos_val / PWM_MAX), 25, 255))
-                surf = pygame.Surface((tile-2, tile-2), pygame.SRCALPHA)
+                surf = pygame.Surface((tile - 2, tile - 2), pygame.SRCALPHA)
                 surf.fill((*POS_COLOR, alpha))
                 screen.blit(surf, (x, y))
             elif neg_val > 0:
                 alpha = int(np.clip(255.0 * (neg_val / PWM_MAX), 25, 255))
-                surf = pygame.Surface((tile-2, tile-2), pygame.SRCALPHA)
+                surf = pygame.Surface((tile - 2, tile - 2), pygame.SRCALPHA)
                 surf.fill((*NEG_COLOR, alpha))
                 screen.blit(surf, (x, y))
             else:
-                pygame.draw.rect(screen, GRID_COLOR, (x, y, tile-2, tile-2))
+                pygame.draw.rect(screen, GRID_COLOR, (x, y, tile - 2, tile - 2))
 
     return x0, y0 + grid_h, grid_w, tile, y0
 
@@ -101,32 +119,32 @@ def draw_table(grid, pos_x, pos_y, width):
     table_top = pos_y + 10
     cell_h = 28
     cell_w = max(width // max(m, 1), 28)
-    pygame.draw.rect(screen, TABLE_BG, (pos_x, table_top, m*cell_w, n*cell_h))
+    pygame.draw.rect(screen, TABLE_BG, (pos_x, table_top, m * cell_w, n * cell_h))
 
     for i in range(n):
         user_row = n - i
-        draw_text(screen, user_row, (pos_x - 26, table_top + i*cell_h + 6), size=16, color=(200,220,180))
+        draw_text(screen, user_row, (pos_x - 26, table_top + i * cell_h + 6), size=16, color=(200, 220, 180))
         for j in range(m):
-            cx = pos_x + j*cell_w + cell_w//2
-            cy = table_top + i*cell_h + cell_h//2
+            cx = pos_x + j * cell_w + cell_w // 2
+            cy = table_top + i * cell_h + cell_h // 2
             pv = int(round(grid[i, j][0]))
             nv = int(round(grid[i, j][1]))
             draw_text(screen, f"{pv}/{nv}", (cx, cy), center=True, size=16)
 
-    for i in range(n+1):
-        y = table_top + i*cell_h
-        pygame.draw.line(screen, TABLE_GRID, (pos_x, y), (pos_x + m*cell_w, y))
-    for j in range(m+1):
-        x = pos_x + j*cell_w
-        pygame.draw.line(screen, TABLE_GRID, (x, table_top), (x, table_top + n*cell_h))
+    for i in range(n + 1):
+        y = table_top + i * cell_h
+        pygame.draw.line(screen, TABLE_GRID, (pos_x, y), (pos_x + m * cell_w, y))
+    for j in range(m + 1):
+        x = pos_x + j * cell_w
+        pygame.draw.line(screen, TABLE_GRID, (x, table_top), (x, table_top + n * cell_h))
 
 def user_to_ij(rc):
     r, c = rc
-    i = n - int(r)
+    i = n - int(r)       # 1-indexed bottom -> 0-indexed top
     j = int(c) - 1
     return i, j
 
-def square_gate(now):
+def square_gate(now, period, dutycycle):
     T = float(period)
     if T <= 0:
         return 1.0
@@ -134,27 +152,14 @@ def square_gate(now):
     phase = now % T
     return 1.0 if phase < (d * T) else 0.0
 
-def polarity_sign(now):
-    if polarity == "pos":
-        return +1
-    if polarity == "neg":
-        return -1
-    # alt
-    T = float(period)
-    if T <= 0:
-        return +1
-    k = int(now // T)
-    return +1 if (k % 2 == 0) else -1
-
 def clear_all(grid):
     grid[:, :, :] = 0.0
 
 def add_cells(grid, cells, signed_level):
     """
-    Add magnets on given cells with signed_level in [-1,1].
-    + => pos channel, - => neg channel.
-    Magnitude maps to PWM_MAX.
-    If both location and trap overlap, trap is added after, overriding (by max).
+    signed_level in [-1,1]
+    + => pos channel, - => neg channel
+    magnitude => abs(signed_level)*PWM_MAX
     """
     signed_level = clamp(float(signed_level), -1.0, 1.0)
     amp = abs(signed_level) * PWM_MAX
@@ -171,21 +176,66 @@ def add_cells(grid, cells, signed_level):
                 grid[i, j][1] = max(grid[i, j][1], amp)
                 grid[i, j][0] = 0.0
 
-def apply_location_vibration(grid, now):
+def parse_intensity_range(ir):
     """
-    Apply vibrating region:
-      - gate in time (0/1)
-      - ON uses signed amplitude from intensity_range and polarity sign
-      - OFF is zero (true off)
-    """
-    g = square_gate(now)
-    if g <= 0:
-        return  # leave as-is (will be zeros if we cleared)
+    Accept either ordering:
+      (-, +) or (+, -)
 
-    s = polarity_sign(now)
-    neg_level, pos_level = intensity_range
-    neg_level = clamp(float(neg_level), -1.0, 0.0)
-    pos_level = clamp(float(pos_level),  0.0, 1.0)
+    Returns:
+      neg_level <= 0
+      pos_level >= 0
+      start_sign_for_alt in {+1,-1}:
+        - if ir[0] >= 0 and ir[1] <= 0  => start with POS (+1)
+        - if ir[0] <= 0 and ir[1] >= 0  => start with NEG (-1)
+        - otherwise (ambiguous): default start with POS
+    """
+    a, b = float(ir[0]), float(ir[1])
+
+    # clamp raw values first
+    a = clamp(a, -1.0, 1.0)
+    b = clamp(b, -1.0, 1.0)
+
+    if a >= 0 and b <= 0:
+        # (pos, neg)
+        pos_level = clamp(a, 0.0, 1.0)
+        neg_level = clamp(b, -1.0, 0.0)
+        start_sign = +1
+    elif a <= 0 and b >= 0:
+        # (neg, pos)
+        neg_level = clamp(a, -1.0, 0.0)
+        pos_level = clamp(b, 0.0, 1.0)
+        start_sign = -1
+    else:
+        # ambiguous (both >=0 or both <=0): interpret as (neg,pos) by magnitude and start POS
+        neg_level = clamp(min(a, b), -1.0, 0.0)
+        pos_level = clamp(max(a, b), 0.0, 1.0)
+        start_sign = +1
+
+    return neg_level, pos_level, start_sign
+
+def polarity_sign(now, polarity, period, start_sign_for_alt):
+    """
+    For polarity="alt", the FIRST half-period (k=0) uses start_sign_for_alt.
+    """
+    if polarity == "pos":
+        return +1
+    if polarity == "neg":
+        return -1
+
+    T = float(period)
+    if T <= 0:
+        return start_sign_for_alt
+
+    k = int(now // T)          # period index
+    return start_sign_for_alt if (k % 2 == 0) else -start_sign_for_alt
+
+def apply_location_vibration_region(grid, now, location, intensity_range, polarity, period, dutycycle):
+    g = square_gate(now, period, dutycycle)
+    if g <= 0:
+        return
+
+    neg_level, pos_level, start_sign = parse_intensity_range(intensity_range)
+    s = polarity_sign(now, polarity, period, start_sign)
 
     signed_level = pos_level if s > 0 else neg_level
     add_cells(grid, location, signed_level)
@@ -200,10 +250,10 @@ except Exception as e:
     ser = None
 
 def get_output_matrix(grid):
-    arr  = np.round(grid[:, :, :2]).astype(int).reshape(-1, 2)
-    flat = arr.flatten()
+    arr = np.round(grid[:, :, :2]).astype(int).reshape(-1, 2)  # (n*m, 2)
+    flat = arr.flatten()                                       # length = n*m*2
     group = 16
-    rows  = len(flat) // group
+    rows = len(flat) // group
     A = np.zeros((rows, group), dtype=int)
     for idx, v in enumerate(flat):
         A[idx // group, idx % group] = v
@@ -229,18 +279,44 @@ while running:
             running = False
 
     # compose field
-    clear_all(grid_data)                       # start from zero
-    apply_location_vibration(grid_data, now)   # vibrating region
-    add_cells(grid_data, trap_location, trap_intensity)  # always-on trap
+    clear_all(grid_data)
+
+    # region 1
+    apply_location_vibration_region(
+        grid_data, now,
+        location, intensity_range, polarity, period, dutycycle
+    )
+
+    # region 2
+    apply_location_vibration_region(
+        grid_data, now,
+        location2, intensity_range2, polarity2, period2, dutycycle2
+    )
+
+    # always-on trap (applied last)
+    add_cells(grid_data, trap_location, trap_intensity)
 
     # draw
     x0, pos_y, grid_w, _, _ = draw_grid(grid_data)
     draw_table(grid_data, x0, pos_y, grid_w)
 
-    draw_text(screen, f"location: {location}", (20, SCREEN_H - 86))
-    draw_text(screen, f"intensity_range(neg,pos): {intensity_range}, polarity={polarity}", (20, SCREEN_H - 64))
-    draw_text(screen, f"period={period}s, dutycycle(time)={dutycycle}, gate={int(square_gate(now))}", (20, SCREEN_H - 42))
-    draw_text(screen, f"trap_location: {trap_location}, trap_intensity={trap_intensity}", (20, SCREEN_H - 20))
+    # show current signs (helpful debug)
+    n1, p1, start1 = parse_intensity_range(intensity_range)
+    n2, p2, start2 = parse_intensity_range(intensity_range2)
+    s1 = polarity_sign(now, polarity, period, start1)
+    s2 = polarity_sign(now, polarity2, period2, start2)
+
+    draw_text(screen, f"region1 location: {location}", (20, SCREEN_H - 130))
+    draw_text(screen, f"region1 intensity_range={intensity_range} (start={'POS' if start1>0 else 'NEG'})", (20, SCREEN_H - 108))
+    draw_text(screen, f"region1 T={period}s, duty={dutycycle}, gate={int(square_gate(now, period, dutycycle))}, sign={'POS' if s1>0 else 'NEG'}",
+              (20, SCREEN_H - 86))
+
+    draw_text(screen, f"region2 location: {location2}", (20, SCREEN_H - 64))
+    draw_text(screen, f"region2 intensity_range={intensity_range2} (start={'POS' if start2>0 else 'NEG'})", (20, SCREEN_H - 42))
+    draw_text(screen, f"region2 T={period2}s, duty={dutycycle2}, gate={int(square_gate(now, period2, dutycycle2))}, sign={'POS' if s2>0 else 'NEG'}",
+              (20, SCREEN_H - 20))
+
+    draw_text(screen, f"trap: {trap_location}, I={trap_intensity}", (420, SCREEN_H - 20))
 
     # send
     A = get_output_matrix(grid_data)
