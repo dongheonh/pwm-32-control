@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Magnet Array Control — 4×8</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #0f1117;
+      color: #e0e0e0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+      padding: 20px;
+      gap: 16px;
+    }
+
+    h1 {
+      font-size: 1.3rem;
+      font-weight: 600;
+      color: #a0c4ff;
+      letter-spacing: 0.04em;
+    }
+
+    /* ── Connection bar ── */
+    #conn-bar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: #1a1d27;
+      border: 1px solid #2e3248;
+      border-radius: 10px;
+      padding: 10px 18px;
+      width: 100%;
+      max-width: 900px;
+    }
+
+    #conn-status {
+      width: 11px; height: 11px;
+      border-radius: 50%;
+      background: #ff4c4c;
+      flex-shrink: 0;
+      box-shadow: 0 0 6px #ff4c4c88;
+      transition: background 0.3s, box-shadow 0.3s;
+    }
+    #conn-status.connected { background: #4cffb0; box-shadow: 0 0 6px #4cffb088; }
+
+    #conn-label { flex: 1; font-size: 0.85rem; color: #888; }
+
+    button {
+      cursor: pointer;
+      border: none;
+      border-radius: 7px;
+      padding: 7px 16px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      transition: opacity 0.15s, transform 0.1s;
+    }
+    button:active { transform: scale(0.97); }
+    button:disabled { opacity: 0.35; cursor: not-allowed; }
+
+    #btn-connect  { background: #4c8cff; color: #fff; }
+    #btn-send     { background: #4cffb0; color: #0f1117; }
+    #btn-clear    { background: #ff6b6b; color: #fff; }
+    #btn-autosend { background: #2e3248; color: #ccc; border: 1px solid #444; }
+    #btn-autosend.active { background: #7c4cff; color: #fff; border-color: #7c4cff; }
+    #btn-preset   { background: #2e3248; color: #ccc; border: 1px solid #444; }
+
+    /* ── Serial log ── */
+    #log {
+      font-size: 0.72rem;
+      color: #4cffb0;
+      flex: 1;
+      text-align: right;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+      max-width: 340px;
+    }
+
+    /* ── Main layout ── */
+    #main {
+      display: flex;
+      gap: 20px;
+      width: 100%;
+      max-width: 1100px;
+      align-items: flex-start;
+    }
+
+    /* ── Grid ── */
+    #grid-wrap {
+      flex: 1;
+    }
+
+    #grid-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+
+    #grid-header span { font-size: 0.8rem; color: #666; }
+
+    #grid {
+      display: grid;
+      grid-template-columns: repeat(8, 1fr);
+      gap: 8px;
+    }
+
+    .cell {
+      background: #1a1d27;
+      border: 1px solid #2e3248;
+      border-radius: 10px;
+      padding: 8px 6px 6px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 5px;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    .cell:hover { border-color: #5570a0; }
+
+    .cell-id {
+      font-size: 0.65rem;
+      color: #555;
+      font-weight: 600;
+    }
+
+    /* Color indicator */
+    .cell-ind {
+      width: 36px; height: 36px;
+      border-radius: 50%;
+      background: #1e2130;
+      border: 2px solid #2e3248;
+      transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+    }
+
+    /* Slider — rotated vertical */
+    .slider-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+      width: 100%;
+    }
+
+    input[type=range] {
+      -webkit-appearance: none;
+      width: 80px;
+      height: 4px;
+      border-radius: 2px;
+      outline: none;
+      cursor: pointer;
+      background: linear-gradient(to right, #2e3248, #2e3248);
+    }
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 14px; height: 14px;
+      border-radius: 50%;
+      background: #a0c4ff;
+      cursor: pointer;
+      border: 2px solid #0f1117;
+    }
+
+    .val-display {
+      font-size: 0.75rem;
+      font-weight: 700;
+      min-width: 30px;
+      text-align: center;
+      color: #a0c4ff;
+    }
+    .val-display.neg { color: #ff6b6b; }
+    .val-display.zero { color: #555; }
+
+    /* Channel readout */
+    .ch-display {
+      font-size: 0.58rem;
+      color: #444;
+      text-align: center;
+      line-height: 1.3;
+    }
+
+    /* ── Side panel ── */
+    #side {
+      width: 200px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .panel {
+      background: #1a1d27;
+      border: 1px solid #2e3248;
+      border-radius: 10px;
+      padding: 14px;
+    }
+
+    .panel h3 {
+      font-size: 0.78rem;
+      color: #888;
+      margin-bottom: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    /* Heatmap */
+    #heatmap {
+      display: grid;
+      grid-template-columns: repeat(8, 1fr);
+      gap: 3px;
+    }
+    .hm-cell {
+      width: 100%;
+      aspect-ratio: 1;
+      border-radius: 3px;
+      background: #2e3248;
+      transition: background 0.15s;
+    }
+
+    /* Group labels */
+    .grp-label {
+      font-size: 0.68rem;
+      color: #666;
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 4px;
+    }
+
+    /* CSV output */
+    #csv-out {
+      font-family: monospace;
+      font-size: 0.6rem;
+      color: #555;
+      word-break: break-all;
+      line-height: 1.5;
+      max-height: 80px;
+      overflow: auto;
+    }
+
+    /* Stats */
+    .stat-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.75rem;
+      padding: 3px 0;
+      border-bottom: 1px solid #1e2130;
+      color: #888;
+    }
+    .stat-row span:last-child { color: #a0c4ff; font-weight: 600; }
+
+    /* Presets */
+    .preset-btn {
+      width: 100%;
+      margin-bottom: 6px;
+      background: #1e2130;
+      color: #aaa;
+      border: 1px solid #2e3248;
+      font-size: 0.75rem;
+      padding: 6px 10px;
+      border-radius: 6px;
+      text-align: left;
+    }
+    .preset-btn:hover { background: #2e3248; color: #fff; }
+  </style>
+</head>
+<body>
+
+<h1>Magnet Array Control — 4×8 (32 Electromagnets)</h1>
+
+<!-- Connection bar -->
+<div id="conn-bar">
+  <div id="conn-status"></div>
+  <span id="conn-label">Not connected</span>
+  <span id="log">–</span>
+  <button id="btn-autosend">Auto-Send OFF</button>
+  <button id="btn-clear">Clear All</button>
+  <button id="btn-send" disabled>Send</button>
+  <button id="btn-connect">Connect Serial</button>
+</div>
+
+<!-- Main area -->
+<div id="main">
+
+  <!-- Magnet grid -->
+  <div id="grid-wrap">
+    <div id="grid-header">
+      <span>Each magnet: −10 (reverse) to +10 (forward) &nbsp;|&nbsp; Channels: (2n) positive, (2n+1) negative</span>
+    </div>
+
+    <!-- Row labels + cells built by JS -->
+    <div id="grid"></div>
+  </div>
+
+  <!-- Side panel -->
+  <div id="side">
+
+    <div class="panel">
+      <h3>Field Map</h3>
+      <div id="heatmap"></div>
+    </div>
+
+    <div class="panel">
+      <h3>Statistics</h3>
+      <div class="stat-row"><span>Active</span><span id="stat-active">0 / 32</span></div>
+      <div class="stat-row"><span>Fwd</span><span id="stat-fwd">0</span></div>
+      <div class="stat-row"><span>Rev</span><span id="stat-rev">0</span></div>
+      <div class="stat-row"><span>Max</span><span id="stat-max">0</span></div>
+      <div class="stat-row"><span>Sends</span><span id="stat-sends">0</span></div>
+    </div>
+
+    <div class="panel">
+      <h3>CSV Preview</h3>
+      <div id="csv-out">–</div>
+    </div>
+
+    <div class="panel">
+      <h3>Presets</h3>
+      <button class="preset-btn" onclick="applyPreset('all-max-fwd')">All +10 (forward)</button>
+      <button class="preset-btn" onclick="applyPreset('all-max-rev')">All −10 (reverse)</button>
+      <button class="preset-btn" onclick="applyPreset('checker')">Checkerboard</button>
+      <button class="preset-btn" onclick="applyPreset('row-wave')">Row wave</button>
+      <button class="preset-btn" onclick="applyPreset('col-wave')">Column wave</button>
+      <button class="preset-btn" onclick="applyPreset('center-focus')">Center focus</button>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// ── Config ──────────────────────────────────────────────────────────────────
+const ROWS   = 4;
+const COLS   = 8;
+const N_MAG  = ROWS * COLS;      // 32 magnets
+const N_CH   = N_MAG * 2;        // 64 channels
+const BAUD   = 115200;
+const MAX_VAL = 10;              // matches Arduino clamp
+
+// ── State ───────────────────────────────────────────────────────────────────
+const values   = new Array(N_MAG).fill(0);  // -10 … +10
+let port       = null;
+let writer     = null;
+let autoSend   = false;
+let sendCount  = 0;
+let autoTimer  = null;
+
+// ── DOM refs ─────────────────────────────────────────────────────────────────
+const grid        = document.getElementById('grid');
+const heatmap     = document.getElementById('heatmap');
+const connStatus  = document.getElementById('conn-status');
+const connLabel   = document.getElementById('conn-label');
+const logEl       = document.getElementById('log');
+const btnConnect  = document.getElementById('btn-connect');
+const btnSend     = document.getElementById('btn-send');
+const btnClear    = document.getElementById('btn-clear');
+const btnAutosend = document.getElementById('btn-autosend');
+const csvOut      = document.getElementById('csv-out');
+const statActive  = document.getElementById('stat-active');
+const statFwd     = document.getElementById('stat-fwd');
+const statRev     = document.getElementById('stat-rev');
+const statMax     = document.getElementById('stat-max');
+const statSends   = document.getElementById('stat-sends');
+
+// ── Build grid ──────────────────────────────────────────────────────────────
+const sliders = [];
+const indicators = [];
+const valLabels = [];
+const chLabels = [];
+const hmCells = [];
+
+for (let row = 0; row < ROWS; row++) {
+  for (let col = 0; col < COLS; col++) {
+    const idx = row * COLS + col;
+    const chPos = idx * 2;
+    const chNeg = idx * 2 + 1;
+    const group = Math.floor(idx / 8);  // PCA9685 group 0-3
+    const groupNames = ['PCA#1 (0x40)', 'PCA#2 (0x7D)', 'PCA#3 (0x7C)', 'PCA#4 (0x78)'];
+
+    const cell = document.createElement('div');
+    cell.className = 'cell';
+    cell.title = `Magnet ${idx}\n${groupNames[group]}\nCH${chPos}(+) CH${chNeg}(−)`;
+
+    const idLabel = document.createElement('div');
+    idLabel.className = 'cell-id';
+    idLabel.textContent = `M${String(idx).padStart(2,'0')}`;
+
+    const ind = document.createElement('div');
+    ind.className = 'cell-ind';
+
+    const sliderWrap = document.createElement('div');
+    sliderWrap.className = 'slider-wrap';
+
+    const slider = document.createElement('input');
+    slider.type = 'range';
+    slider.min = -MAX_VAL;
+    slider.max = MAX_VAL;
+    slider.step = 1;
+    slider.value = 0;
+
+    const valLbl = document.createElement('div');
+    valLbl.className = 'val-display zero';
+    valLbl.textContent = '0';
+
+    const chLbl = document.createElement('div');
+    chLbl.className = 'ch-display';
+    chLbl.textContent = `+CH${chPos} −CH${chNeg}`;
+
+    sliderWrap.append(slider, valLbl);
+    cell.append(idLabel, ind, sliderWrap, chLbl);
+    grid.appendChild(cell);
+
+    sliders.push(slider);
+    indicators.push(ind);
+    valLabels.push(valLbl);
+    chLabels.push(chLbl);
+
+    slider.addEventListener('input', () => {
+      const v = parseInt(slider.value);
+      values[idx] = v;
+      updateCell(idx);
+      updateStats();
+      updateCSV();
+      if (autoSend) scheduleSend();
+    });
+
+    // Heatmap cell
+    const hm = document.createElement('div');
+    hm.className = 'hm-cell';
+    heatmap.appendChild(hm);
+    hmCells.push(hm);
+  }
+}
+
+// ── Update a single cell's visuals ──────────────────────────────────────────
+function updateCell(idx) {
+  const v = values[idx];
+  const slider = sliders[idx];
+  const ind = indicators[idx];
+  const lbl = valLabels[idx];
+
+  slider.value = v;
+  lbl.textContent = (v > 0 ? '+' : '') + v;
+  lbl.className = 'val-display ' + (v > 0 ? '' : v < 0 ? 'neg' : 'zero');
+
+  const t = Math.abs(v) / MAX_VAL;   // 0..1 intensity
+
+  if (v > 0) {
+    const b = Math.round(80 + 175 * t);
+    ind.style.background = `rgb(0, ${Math.round(50 + 180*t)}, ${b})`;
+    ind.style.borderColor = `rgba(0,160,255,${0.3+0.7*t})`;
+    ind.style.boxShadow   = t > 0 ? `0 0 ${8*t}px rgba(0,160,255,${0.6*t})` : 'none';
+    hmCells[idx].style.background = `rgba(0,140,255,${0.15 + 0.85*t})`;
+  } else if (v < 0) {
+    const r = Math.round(80 + 175 * t);
+    ind.style.background = `rgb(${r}, ${Math.round(20+30*t)}, 0)`;
+    ind.style.borderColor = `rgba(255,80,0,${0.3+0.7*t})`;
+    ind.style.boxShadow   = `0 0 ${8*t}px rgba(255,80,0,${0.6*t})`;
+    hmCells[idx].style.background = `rgba(255,70,0,${0.15 + 0.85*t})`;
+  } else {
+    ind.style.background  = '#1e2130';
+    ind.style.borderColor = '#2e3248';
+    ind.style.boxShadow   = 'none';
+    hmCells[idx].style.background = '#2e3248';
+  }
+}
+
+// ── Statistics ───────────────────────────────────────────────────────────────
+function updateStats() {
+  let active = 0, fwd = 0, rev = 0, mx = 0;
+  for (const v of values) {
+    if (v !== 0) active++;
+    if (v > 0) fwd++;
+    if (v < 0) rev++;
+    if (Math.abs(v) > mx) mx = Math.abs(v);
+  }
+  statActive.textContent = `${active} / ${N_MAG}`;
+  statFwd.textContent = fwd;
+  statRev.textContent = rev;
+  statMax.textContent = mx;
+}
+
+// ── CSV encode ───────────────────────────────────────────────────────────────
+// Channel layout: magnet i → ch[2i] = positive driver, ch[2i+1] = negative driver
+// Arduino clamps 0-10, so we split sign here.
+function encodeCSV() {
+  const ch = new Array(N_CH).fill(0);
+  for (let i = 0; i < N_MAG; i++) {
+    const v = values[i];
+    if (v >= 0) {
+      ch[i * 2]     = v;     // positive channel
+      ch[i * 2 + 1] = 0;
+    } else {
+      ch[i * 2]     = 0;
+      ch[i * 2 + 1] = -v;   // negative channel (absolute)
+    }
+  }
+  return ch.join(',');
+}
+
+function updateCSV() {
+  csvOut.textContent = encodeCSV();
+}
+
+// ── Send ─────────────────────────────────────────────────────────────────────
+let sendTimeout = null;
+function scheduleSend() {
+  clearTimeout(sendTimeout);
+  sendTimeout = setTimeout(sendNow, 50);  // 50 ms debounce
+}
+
+async function sendNow() {
+  if (!writer) return;
+  const csv = encodeCSV() + '\n';
+  try {
+    const enc = new TextEncoder();
+    await writer.write(enc.encode(csv));
+    sendCount++;
+    statSends.textContent = sendCount;
+    logEl.textContent = `Sent #${sendCount}: ${csv.slice(0, 60)}…`;
+  } catch (e) {
+    logEl.textContent = 'Send error: ' + e.message;
+  }
+}
+
+// ── Serial connection ─────────────────────────────────────────────────────────
+btnConnect.addEventListener('click', async () => {
+  if (port) {
+    // Disconnect
+    try {
+      await writer.close();
+      await port.close();
+    } catch (_) {}
+    port = null; writer = null;
+    connStatus.className = '';
+    connLabel.textContent = 'Not connected';
+    btnConnect.textContent = 'Connect Serial';
+    btnSend.disabled = true;
+    logEl.textContent = 'Disconnected';
+    return;
+  }
+
+  if (!navigator.serial) {
+    alert('Web Serial API not supported.\nUse Chrome or Edge (version 89+).\nMake sure the page is served over HTTPS or localhost.');
+    return;
+  }
+
+  try {
+    port = await navigator.serial.requestPort();
+    await port.open({ baudRate: BAUD });
+    const ws = port.writable.getWriter();
+    writer = ws;
+
+    connStatus.className = 'connected';
+    connLabel.textContent = `Connected @ ${BAUD} baud`;
+    btnConnect.textContent = 'Disconnect';
+    btnSend.disabled = false;
+    logEl.textContent = 'Ready';
+
+    // Read echo back
+    readSerial(port);
+  } catch (e) {
+    logEl.textContent = 'Connect error: ' + e.message;
+    port = null;
+  }
+});
+
+async function readSerial(p) {
+  const decoder = new TextDecoderStream();
+  p.readable.pipeTo(decoder.writable).catch(() => {});
+  const reader = decoder.readable.getReader();
+  let buf = '';
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += value;
+      if (buf.includes('\n')) {
+        const lines = buf.split('\n');
+        buf = lines.pop();
+        logEl.textContent = 'Echo: ' + lines[lines.length - 1].trim().slice(0, 80);
+      }
+    }
+  } catch (_) {}
+}
+
+// ── Buttons ───────────────────────────────────────────────────────────────────
+btnSend.addEventListener('click', sendNow);
+
+btnClear.addEventListener('click', () => {
+  for (let i = 0; i < N_MAG; i++) {
+    values[i] = 0;
+    updateCell(i);
+  }
+  updateStats();
+  updateCSV();
+  if (autoSend) sendNow();
+});
+
+btnAutosend.addEventListener('click', () => {
+  autoSend = !autoSend;
+  btnAutosend.textContent = autoSend ? 'Auto-Send ON' : 'Auto-Send OFF';
+  btnAutosend.className = autoSend ? 'active' : '';
+});
+
+// ── Presets ───────────────────────────────────────────────────────────────────
+function applyPreset(name) {
+  for (let i = 0; i < N_MAG; i++) {
+    const row = Math.floor(i / COLS);
+    const col = i % COLS;
+    switch (name) {
+      case 'all-max-fwd':   values[i] = MAX_VAL;  break;
+      case 'all-max-rev':   values[i] = -MAX_VAL; break;
+      case 'checker':       values[i] = ((row + col) % 2 === 0) ? MAX_VAL : -MAX_VAL; break;
+      case 'row-wave':      values[i] = Math.round(MAX_VAL * Math.sin(row * Math.PI / (ROWS - 1))); break;
+      case 'col-wave':      values[i] = Math.round(MAX_VAL * Math.sin(col * Math.PI / (COLS - 1))); break;
+      case 'center-focus': {
+        const dr = row - (ROWS-1)/2, dc = col - (COLS-1)/2;
+        const dist = Math.sqrt(dr*dr + dc*dc);
+        const maxDist = Math.sqrt(((ROWS-1)/2)**2 + ((COLS-1)/2)**2);
+        values[i] = Math.round(MAX_VAL * (1 - dist / maxDist));
+        break;
+      }
+    }
+  }
+  for (let i = 0; i < N_MAG; i++) updateCell(i);
+  updateStats();
+  updateCSV();
+  if (autoSend) sendNow();
+}
+
+// ── Keyboard shortcuts ────────────────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.repeat) sendNow();
+  if (e.key === 'Escape') btnClear.click();
+});
+
+// ── Init ─────────────────────────────────────────────────────────────────────
+updateStats();
+updateCSV();
+</script>
+</body>
+</html>

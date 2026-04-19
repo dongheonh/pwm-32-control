@@ -1,32 +1,39 @@
 #include <Wire.h>
 #include <Adafruit_PWMServoDriver.h>
 
-// SAM LAB, D H HAN
-// 09/23/2025
-// Pixel-level control for a 4×8 electromagnet array 
-// This code sets per-coil **magnitude (0–100%)** and **direction (+/−)** in real time. therefore [-100, 100]
+// SAM Lab, D. H. Han
+// 04/15/2026
+// Pixel-level control for a 4×8 electromagnet array
+// This code sets the per-coil magnitude (0–100%) and direction (+/-) in real time.
+// Therefore, the intended command range is [-100, 100].
+//
+// INPUT:
+//   - CSV data received line by line over Serial
+//
+// OUTPUT:
+//   - I2C commands sent to PCA9685 drivers
+//   - Serial echo for communication validation
+//
+// Communication:
+//   - I2C sends data to each PCA9685 address
+//   - Each PCA9685 provides 16 PWM output channels
 
-// INPUT AND OUTPUT
-// INPUT: csv data (line by line) from serial 
-// OUTPUT: I2C communication, send signal back to the serial (validate communication)
+// Instantiate four PCA9685 drivers with different I2C addresses
+// Change addresses if needed
 
-// Comnication: I2C, send 8 bit data to each address
-// PCA9685 Output 16 PWM signals 
-
-
-// Instantiate four PCA9685 drivers with different I2C addresses (hardware address) 
-// change adress (nxnn) if needed
-Adafruit_PWMServoDriver pwm1(0x72);
-Adafruit_PWMServoDriver pwm2(0x7D);
-Adafruit_PWMServoDriver pwm3(0x7C);
-Adafruit_PWMServoDriver pwm4(0x78);
+Adafruit_PWMServoDriver pwm1(0x42); // 000010
+Adafruit_PWMServoDriver pwm2(0x43); // 000011
+Adafruit_PWMServoDriver pwm3(0x44); // 000100
+Adafruit_PWMServoDriver pwm4(0x45); // 000101
 
 void setup() {
   Serial.begin(115200);  // Start serial communication
 
-  Wire.begin();                 // I2C init. 
-  Wire.setClock(400000);        // config: 400 kHz 
-
+  // Set I2C pins first for RP Pico
+  Wire.setSDA(4);        // GP4
+  Wire.setSCL(5);        // GP5
+  Wire.begin();          // Initialize I2C
+  Wire.setClock(400000); // Set I2C clock to 400 kHz
 
   // Initialize all PWM drivers
   pwm1.begin();
@@ -34,64 +41,63 @@ void setup() {
   pwm3.begin();
   pwm4.begin();
 
-  delay(10);  // Small delay to ensure stability
+  delay(10);  // Small delay for stability
 }
 
-
-
-
 void loop() {
-  int nToken = 64;    // Expecting 64 integer values in [0, 10] - intensity and polarity of 32 magnets therefore 32 * 2 = 64
-  int nGr = 4;        // 4 groups of 16 channels - groups by each column (4 columns and 8 rows)
-  
-  // control input
-  int values[64];     // *** Store parsed integer values as an integer (UNO: 64 × 2 B = 128 B, PICO: 64 × 4 B = 256 B): Control Input
+  const int nToken = 64; // Expecting 64 integer values
+                        // 32 magnets × 2 values per magnet = 64
+  const int nGr = 4;     // 4 PCA9685 groups, each with 16 channels
 
-  // STRING -> INT
+  int values[64];        // Parsed integer input values
+
   if (Serial.available()) {
-    String line = Serial.readStringUntil('\n');  // Read a line from Serial (line by line) save as a String Object
-    line.trim(); // use trim method to trim line by line
+    String line = Serial.readStringUntil('\n'); // Read one line from Serial
+    line.trim();
 
-    // *** Print the received CSV string to the Serial Monitor: TO VALIDATE COMMUNICATION
-    Serial.println(line); // to commnication results from 
-
+    // Echo received CSV string for communication validation
+    Serial.println(line);
 
     int startIdx = 0;
     int count = 0;
 
     // Parse comma-separated integers
     while (count < nToken) {
-      int commaIdx = line.indexOf(',', startIdx);     // find # of ',' return int (-1 return if false, ++1 return if true)
+      int commaIdx = line.indexOf(',', startIdx);
       String token;
+
       if (commaIdx == -1) {
-        token = line.substring(startIdx);  // Last token
+        token = line.substring(startIdx); // Last token
       } else {
         token = line.substring(startIdx, commaIdx);
       }
 
       token.trim();
-      values[count++] = token.toInt();  // Convert string to integer, token is a String need to convert it to int
+      values[count++] = token.toInt();
 
       if (commaIdx == -1) break;
       startIdx = commaIdx + 1;
     }
 
-    // Send PWM signal to each driver
+    // Send PWM signals to each driver
     for (int g = 0; g < nGr; g++) {
       Adafruit_PWMServoDriver* pwm;
-      if (g == 0) pwm = &pwm1;        // address of pwm1
-      else if (g == 1) pwm = &pwm2;   // address of pwm2
-      else if (g == 2) pwm = &pwm3;   // address of pwm3
-      else pwm = &pwm4;               // address of pwm4
+
+      if (g == 0)      pwm = &pwm1;
+      else if (g == 1) pwm = &pwm2;
+      else if (g == 2) pwm = &pwm3;
+      else             pwm = &pwm4;
 
       for (int i = 0; i < 16; i++) {
         int idx = g * 16 + i;
-        int input_val = values[idx];  // Range: [0, 10]
+        int input_val = values[idx]; // Current code assumes range [0, 10]
 
-        // for safety (optional)
-        input_val = constrain(input_val, 0, 10);  // Safety: The constrain(x, a, b) function forces any input to remain within the range [a, b].
+        // Safety clamp ㅃ
+        input_val = constrain(input_val, 0, 10);
 
-        int pwm_val = input_val * 409;  // Map 0–10 → 0–4090, PWM 0 - 100 percent
+        // Map 0–10 to 0–4090
+        int pwm_val = input_val * 409;
+
         pwm->setPWM(i, 0, pwm_val);
       }
     }
